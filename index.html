@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Room-Based Chat</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+    .container { display: flex; height: 80vh; }
+    .sidebar { width: 200px; border-right: 1px solid #ddd; padding-right: 20px; }
+    .chat-area { flex: 1; padding-left: 20px; display: flex; flex-direction: column; }
+    #messages { flex: 1; overflow-y: auto; list-style: none; padding: 0; }
+    #messages li { margin-bottom: 10px; padding: 8px; border-radius: 4px; }
+    .message { background: #f0f0f0; }
+    .my-message { background: #007bff; color: white; text-align: right; }
+    .notification { color: #666; font-style: italic; font-size: 0.9em; }
+    #message-form { display: flex; margin-top: 10px; }
+    #message-input { flex: 1; padding: 8px; }
+    #room-form { margin-bottom: 20px; }
+    .user-list { list-style: none; padding: 0; }
+    .user-list li { padding: 5px; }
+    .user-online::before { content: "•"; color: green; margin-right: 5px; }
+  </style>
+</head>
+<body>
+  <h1>Room-Based Chat</h1>
+  
+  <div id="login-section">
+    <h3>Enter Your Details</h3>
+    <form id="login-form">
+      <input type="text" id="username-input" placeholder="Username" required>
+      <input type="text" id="room-input" placeholder="Room Name" required>
+      <button type="submit">Join Chat</button>
+    </form>
+  </div>
+
+  <div id="chat-section" style="display: none;">
+    <div class="container">
+      <div class="sidebar">
+        <h3>Room: <span id="current-room"></span></h3>
+        <h4>Online Users</h4>
+        <ul id="user-list" class="user-list"></ul>
+      </div>
+      
+      <div class="chat-area">
+        <ul id="messages"></ul>
+        <form id="message-form">
+          <input type="text" id="message-input" placeholder="Type your message..." autocomplete="off">
+          <button type="submit">Send</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
+  <script>
+    const socket = io('http://localhost:3001');
+    let currentUsername = '';
+    let currentRoom = '';
+
+    // DOM Elements
+    const loginSection = document.getElementById('login-section');
+    const chatSection = document.getElementById('chat-section');
+    const loginForm = document.getElementById('login-form');
+    const usernameInput = document.getElementById('username-input');
+    const roomInput = document.getElementById('room-input');
+    const currentRoomDisplay = document.getElementById('current-room');
+    const userList = document.getElementById('user-list');
+    const messagesList = document.getElementById('messages');
+    const messageForm = document.getElementById('message-form');
+    const messageInput = document.getElementById('message-input');
+
+    // Join room
+    loginForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      currentUsername = usernameInput.value.trim();
+      currentRoom = roomInput.value.trim().toLowerCase();
+      
+      if (currentUsername && currentRoom) {
+        socket.emit('join-room', { 
+          room: currentRoom, 
+          name: currentUsername 
+        });
+        
+        // Show chat interface
+        currentRoomDisplay.textContent = currentRoom;
+        loginSection.style.display = 'none';
+        chatSection.style.display = 'block';
+        messageInput.focus();
+      }
+    });
+
+    // Send message
+    messageForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const message = messageInput.value.trim();
+      if (message) {
+        socket.emit('send-message', message);
+        messageInput.value = '';
+      }
+    });
+
+    // Socket event handlers
+    socket.on('room-data', (data) => {
+      // Update user list
+      userList.innerHTML = '';
+      data.users.forEach(user => {
+        const li = document.createElement('li');
+        li.className = 'user-online';
+        li.textContent = user;
+        userList.appendChild(li);
+      });
+      
+      // Load previous messages
+      messagesList.innerHTML = '';
+      data.messages.forEach(msg => {
+        addMessage(msg.sender, msg.text, msg.time, msg.sender === currentUsername);
+      });
+    });
+
+    socket.on('user-joined', (username) => {
+      if (username !== currentUsername) {
+        addNotification(`${username} joined the room`);
+        
+        // Add to user list
+        const li = document.createElement('li');
+        li.className = 'user-online';
+        li.textContent = username;
+        userList.appendChild(li);
+      }
+    });
+
+    socket.on('user-left', (username) => {
+      addNotification(`${username} left the room`);
+      
+      // Remove from user list
+      Array.from(userList.children).forEach(li => {
+        if (li.textContent === username) {
+          li.remove();
+        }
+      });
+    });
+
+    socket.on('new-message', (msgData) => {
+      addMessage(msgData.sender, msgData.text, msgData.time, msgData.sender === currentUsername);
+    });
+
+    // Helper functions
+    function addMessage(sender, text, time, isSelf) {
+      const li = document.createElement('li');
+      li.className = isSelf ? 'my-message' : 'message';
+      li.innerHTML = `
+        <div><strong>${sender}</strong> <small>${time}</small></div>
+        <div>${text}</div>
+      `;
+      messagesList.appendChild(li);
+      messagesList.scrollTop = messagesList.scrollHeight;
+    }
+
+    function addNotification(text) {
+      const li = document.createElement('li');
+      li.className = 'notification';
+      li.textContent = text;
+      messagesList.appendChild(li);
+      messagesList.scrollTop = messagesList.scrollHeight;
+    }
+  </script>
+</body>
+</html>
